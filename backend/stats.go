@@ -110,12 +110,17 @@ func (s *Server) handleStatsOverview(w http.ResponseWriter, r *http.Request) {
 		rows.Close()
 	}
 
+	// 设备接入数（devices 表启用设备，非日志类别数）
+	var deviceCount int
+	_ = s.db.QueryRow("SELECT COUNT(*) FROM devices WHERE enabled=1").Scan(&deviceCount)
+
 	data := map[string]any{
 		"today_total":   todayTotal,
 		"last_7d":       last7,
 		"category_dist": cats,
 		"top_sources":   srcs,
 		"top_events":    evs,
+		"device_count":  deviceCount,
 	}
 	// 写入 Redis 缓存（60s）
 	if s.rdb != nil {

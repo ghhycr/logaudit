@@ -7,7 +7,7 @@ export interface HostOverview {
   uptime_seconds: number
   cpu: { cores: number; usage_percent: number }
   memory: { total_gb: number; used_gb: number; usage_percent: number }
-  disk: { total_gb: number; used_gb: number; usage_percent: number }
+  disk: { total_gb: number; used_gb: number; usage_percent: number; mount: string }
   collected_at: string
 }
 

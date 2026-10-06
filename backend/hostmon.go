@@ -36,6 +36,7 @@ type DiskInfo struct {
 	TotalGB  float64 `json:"total_gb"`
 	UsedGB   float64 `json:"used_gb"`
 	UsagePct float64 `json:"usage_percent"`
+	Mount    string  `json:"mount"` // 展示用：数据盘 /data 或 根分区 /
 }
 
 type HostOverview struct {
@@ -98,9 +99,13 @@ func readMemInfo() (totalKB, availKB uint64) {
 }
 
 func readUptime() int64 {
-	b, err := os.ReadFile(HOSTPROC + "/uptime")
+	// 宿主机视角（/hostroot 为宿主机根；/hostproc/uptime 是容器 namespace 的 uptime）
+	b, err := os.ReadFile(HOSTROOT + "/proc/uptime")
 	if err != nil {
-		return 0
+		b, err = os.ReadFile(HOSTPROC + "/uptime")
+		if err != nil {
+			return 0
+		}
 	}
 	f := strings.Fields(string(b))
 	if len(f) < 1 {
@@ -167,10 +172,22 @@ func (s *Server) handleHostOverview(w http.ResponseWriter, r *http.Request) {
 		mem.UsagePct = round2(100 * float64(totalKB-availKB) / float64(totalKB))
 	}
 
-	// 磁盘（宿主机根分区，容器以只读方式挂载宿主机 / 到 /hostroot）
+	// 磁盘：优先日志数据盘 /data（sdb，宿主机根 / 只读挂载在 /hostroot），不存在时回退根分区
 	var disk DiskInfo
 	var st syscall.Statfs_t
-	if err := syscall.Statfs(HOSTROOT, &st); err == nil && st.Blocks > 0 {
+	diskPath := HOSTROOT + "/data"
+	if err := syscall.Statfs(diskPath, &st); err != nil || st.Blocks == 0 {
+		diskPath = HOSTROOT
+		if err := syscall.Statfs(diskPath, &st); err != nil {
+			st.Blocks = 0
+		}
+	}
+	if diskPath == HOSTROOT+"/data" {
+		disk.Mount = "数据盘 /data"
+	} else {
+		disk.Mount = "根分区 /"
+	}
+	if st.Blocks > 0 {
 		totalB := st.Blocks * uint64(st.Bsize)
 		freeB := st.Bavail * uint64(st.Bsize)
 		usedB := totalB - freeB

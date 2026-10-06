@@ -153,7 +153,7 @@ async function doLoad(): Promise<void> {
     cards.value = [
       { label: '今日日志量', value: String(ov.today_total ?? '-') },
       { label: '近 7 天日志量', value: fmt((ov.last_7d || []).reduce((a, b) => a + (b.count || 0), 0)) },
-      { label: '设备接入数', value: String((ov.category_dist || []).length) || '-' },
+      { label: '设备接入数', value: String(ov.device_count ?? '-') },
       { label: '留存天数', value: '180' }
     ]
     statCards.value = [
@@ -189,15 +189,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div v-loading="loading" class="page">
-    <!-- 核心指标 -->
-    <div class="cards">
-      <div v-for="c in cards" :key="c.label" class="card">
-        <div class="label">{{ c.label }}</div>
-        <div class="value">{{ c.value }}</div>
-      </div>
-    </div>
-
-    <!-- 主机硬件信息 -->
+    <!-- 第一行：主机硬件信息 -->
     <div class="cards">
       <div class="card host-card">
         <div class="host-head">
@@ -224,7 +216,7 @@ onBeforeUnmount(() => {
       <div class="card host-card">
         <div class="host-head">
           <div class="label">磁盘使用情况</div>
-          <div class="host-name">{{ host ? host.disk.used_gb.toFixed(1) + ' / ' + host.disk.total_gb.toFixed(1) + ' GB' : '' }}</div>
+          <div class="host-name">{{ host?.disk.mount || '' }} {{ host ? host.disk.used_gb.toFixed(1) + ' / ' + host.disk.total_gb.toFixed(1) + ' GB' : '' }}</div>
         </div>
         <div class="host-value" :style="{ color: usageColor(host?.disk.usage_percent ?? 0) }">
           {{ host ? host.disk.usage_percent.toFixed(1) + '%' : '-' }}
@@ -238,6 +230,14 @@ onBeforeUnmount(() => {
         </div>
         <div class="host-value" style="font-size:16px">{{ host ? fmtUptime(host.uptime_seconds) : '-' }}</div>
         <div class="host-sub">{{ host?.collected_at || '' }}</div>
+      </div>
+    </div>
+
+    <!-- 第二行：核心指标 -->
+    <div class="cards">
+      <div v-for="c in cards" :key="c.label" class="card">
+        <div class="label">{{ c.label }}</div>
+        <div class="value">{{ c.value }}</div>
       </div>
     </div>
 

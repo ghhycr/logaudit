@@ -71,6 +71,7 @@ export interface StatsOverview {
   category_dist: Array<{ category: string; count: number }>
   top_sources: Array<{ source_ip: string; count: number }>
   top_events: Array<{ event_type: string; count: number }>
+  device_count?: number        // 设备接入数（devices 表启用数）
 }
 
 /** 登录失败统计（近 7 天，来自 MySQL 操作审计） */
