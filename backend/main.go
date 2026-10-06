@@ -65,6 +65,7 @@ func main() {
 	mux.HandleFunc("POST /api/v1/logs/export", s.requireAuth(s.handleExportLogs))
 	mux.HandleFunc("GET /api/v1/stats/overview", s.requireAuth(s.handleStatsOverview))
 	mux.HandleFunc("GET /api/v1/stats/login-fail", s.requireAuth(s.handleLoginFailStats))
+	mux.HandleFunc("GET /api/v1/host/overview", s.requireAuth(s.handleHostOverview))
 	mux.HandleFunc("GET /api/v1/devices", s.requireAuth(s.handleListDevices))
 	mux.HandleFunc("POST /api/v1/devices", s.requireAuth(s.requireRole("admin", s.handleCreateDevice)))
 	mux.HandleFunc("PUT /api/v1/devices/{id}", s.requireAuth(s.requireRole("admin", s.handleUpdateDevice)))

@@ -95,6 +95,9 @@ services:
       ADMIN_INIT_PASSWORD: ${ADMIN_INIT_PASSWORD:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"   # 宿主机 Redis 部署时 REDIS_ADDR=host.docker.internal:6379
+    volumes:
+      - /proc:/hostproc:ro    # 宿主机硬件监控（总览仪表盘：CPU/内存）
+      - /:/hostroot:ro        # 宿主机根分区磁盘占用（只读挂载）
     depends_on:
       mysql:
         condition: service_healthy

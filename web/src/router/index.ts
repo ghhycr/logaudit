@@ -41,12 +41,6 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '日志检索' }
       },
       {
-        path: 'stats',
-        name: 'stats',
-        component: () => import('@/views/stats/StatsView.vue'),
-        meta: { title: '统计分析' }
-      },
-      {
         path: 'devices',
         name: 'devices',
         component: () => import('@/views/devices/DevicesView.vue'),

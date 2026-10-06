@@ -12,7 +12,6 @@ const menus = computed(() => {
   const base = [
     { path: '/dashboard', title: '总览仪表盘', icon: 'Odometer' },
     { path: '/logs', title: '日志检索', icon: 'Document' },
-    { path: '/stats', title: '统计分析', icon: 'DataAnalysis' },
     { path: '/devices', title: '设备台账', icon: 'Monitor' }
   ]
   const alertGroup = {
