@@ -71,6 +71,12 @@ func main() {
 	mux.HandleFunc("DELETE /api/v1/devices/{id}", s.requireAuth(s.requireRole("admin", s.handleDeleteDevice)))
 	mux.HandleFunc("GET /api/v1/retention", s.requireAuth(s.handleRetention))
 	mux.HandleFunc("GET /api/v1/users", s.requireAuth(s.requireRole("admin", s.handleListUsers)))
+	mux.HandleFunc("POST /api/v1/users", s.requireAuth(s.requireRole("admin", s.handleCreateUser)))
+	mux.HandleFunc("PUT /api/v1/users/{id}", s.requireAuth(s.requireRole("admin", s.handleUpdateUser)))
+	mux.HandleFunc("DELETE /api/v1/users/{id}", s.requireAuth(s.requireRole("admin", s.handleDeleteUser)))
+	mux.HandleFunc("POST /api/v1/users/{id}/reset-password", s.requireAuth(s.requireRole("admin", s.handleResetPassword)))
+	mux.HandleFunc("GET /api/v1/settings/ntp", s.requireAuth(s.requireRole("admin", s.handleGetNTP)))
+	mux.HandleFunc("PUT /api/v1/settings/ntp", s.requireAuth(s.requireRole("admin", s.handlePutNTP)))
 	// ---- M5 告警规则与事件 ----
 	mux.HandleFunc("GET /api/v1/alerts/rules", s.requireAuth(s.handleListAlertRules))
 	mux.HandleFunc("POST /api/v1/alerts/rules", s.requireAuth(s.requireRole("admin", s.handleCreateAlertRule)))

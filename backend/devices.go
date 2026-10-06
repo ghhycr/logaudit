@@ -174,8 +174,10 @@ func (s *Server) handleRetention(w http.ResponseWriter, r *http.Request) {
 // GET /api/v1/users
 func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(
-		`SELECT id, username, display_name, role, status, COALESCE(last_login_at, ''),
-		        (lock_until IS NOT NULL AND lock_until > NOW()) FROM users ORDER BY id`)
+		`SELECT id, username, display_name, role, status, fail_count,
+		        COALESCE(last_login_at, ''), (lock_until IS NOT NULL AND lock_until > NOW()),
+		        DATE_FORMAT(created_at, '%Y-%m-%d %H:%i:%s')
+		 FROM users ORDER BY id`)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, 5000, "用户查询失败")
 		return
@@ -188,13 +190,15 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 		Display   string `json:"display_name"`
 		Role      string `json:"role"`
 		Status    int    `json:"status"`
+		FailCount int    `json:"fail_count"`
 		LastLogin string `json:"last_login_at"`
 		Locked    bool   `json:"locked"`
+		CreatedAt string `json:"created_at"`
 	}
 	out := make([]userRow, 0, 20)
 	for rows.Next() {
 		var ur userRow
-		if rows.Scan(&ur.ID, &ur.Username, &ur.Display, &ur.Role, &ur.Status, &ur.LastLogin, &ur.Locked) == nil {
+		if rows.Scan(&ur.ID, &ur.Username, &ur.Display, &ur.Role, &ur.Status, &ur.FailCount, &ur.LastLogin, &ur.Locked, &ur.CreatedAt) == nil {
 			out = append(out, ur)
 		}
 	}

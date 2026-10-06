@@ -68,13 +68,31 @@ const routes: RouteRecordRaw[] = [
         path: 'retention',
         name: 'retention',
         component: () => import('@/views/retention/RetentionView.vue'),
-        meta: { title: '留存与容量' }
+        meta: { title: '留存与容量', roles: ['admin'] }
       },
       {
         path: 'settings',
         name: 'settings',
         component: () => import('@/views/settings/SettingsView.vue'),
         meta: { title: '系统设置', roles: ['admin'] }
+      },
+      {
+        path: 'settings/users',
+        name: 'settings-users',
+        component: () => import('@/views/settings/UserManageView.vue'),
+        meta: { title: '用户管理', roles: ['admin'] }
+      },
+      {
+        path: 'settings/roles',
+        name: 'settings-roles',
+        component: () => import('@/views/settings/RoleManageView.vue'),
+        meta: { title: '权限管理', roles: ['admin'] }
+      },
+      {
+        path: 'settings/ntp',
+        name: 'settings-ntp',
+        component: () => import('@/views/settings/NtpConfigView.vue'),
+        meta: { title: 'NTP服务器配置', roles: ['admin'] }
       }
     ]
   },

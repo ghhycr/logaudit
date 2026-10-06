@@ -9,19 +9,29 @@ const router = useRouter()
 const auth = useAuthStore()
 
 const menus = computed(() => {
-  const all = [
+  const base = [
     { path: '/dashboard', title: '总览仪表盘', icon: 'Odometer' },
     { path: '/logs', title: '日志检索', icon: 'Document' },
     { path: '/stats', title: '统计分析', icon: 'DataAnalysis' },
-    { path: '/devices', title: '设备台账', icon: 'Monitor' },
-    { path: '/alerts/events', title: '告警事件', icon: 'Bell' },
-    { path: '/retention', title: '留存与容量', icon: 'Coin' }
+    { path: '/devices', title: '设备台账', icon: 'Monitor' }
   ]
-  if (auth.role === 'admin') {
-    all.splice(5, 0, { path: '/alerts/rules', title: '告警规则', icon: 'SetUp' })
-    all.push({ path: '/settings', title: '系统设置', icon: 'Setting' })
+  const alertGroup = {
+    title: '告警配置', icon: 'Bell',
+    children: [{ path: '/alerts/events', title: '告警事件' }]
   }
-  return all
+  if (auth.role === 'admin') {
+    alertGroup.children.push({ path: '/alerts/rules', title: '告警规则' })
+  }
+  const settingGroup: { title: string; icon: string; children: { path: string; title: string }[] } = {
+    title: '系统设置', icon: 'Setting',
+    children: [
+      { path: '/settings/users', title: '用户管理' },
+      { path: '/settings/roles', title: '权限管理' },
+      { path: '/settings/ntp', title: 'NTP服务器配置' },
+      { path: '/retention', title: '留存与容量' }
+    ]
+  }
+  return { base, alertGroup, settingGroup, isAdmin: auth.role === 'admin' }
 })
 
 async function onLogout(): Promise<void> {
@@ -45,16 +55,39 @@ async function onLogout(): Promise<void> {
       </div>
       <el-menu
         :default-active="route.path"
+        :default-openeds="['alerts-group', 'settings-group']"
         router
         background-color="transparent"
         text-color="#1a1b1c"
         active-text-color="#1d7872"
         class="menu"
       >
-        <el-menu-item v-for="m in menus" :key="m.path" :index="m.path">
+        <el-menu-item v-for="m in menus.base" :key="m.path" :index="m.path">
           <el-icon><component :is="m.icon" /></el-icon>
           <span>{{ m.title }}</span>
         </el-menu-item>
+
+        <!-- 告警配置：二级子模块（告警事件 / 告警规则） -->
+        <el-sub-menu index="alerts-group">
+          <template #title>
+            <el-icon><component :is="menus.alertGroup.icon" /></el-icon>
+            <span>{{ menus.alertGroup.title }}</span>
+          </template>
+          <el-menu-item v-for="c in menus.alertGroup.children" :key="c.path" :index="c.path">
+            {{ c.title }}
+          </el-menu-item>
+        </el-sub-menu>
+
+        <!-- 系统设置：用户管理 / 权限管理 / NTP 配置 / 留存与容量（仅 admin） -->
+        <el-sub-menu v-if="menus.isAdmin" index="settings-group">
+          <template #title>
+            <el-icon><component :is="menus.settingGroup.icon" /></el-icon>
+            <span>{{ menus.settingGroup.title }}</span>
+          </template>
+          <el-menu-item v-for="c in menus.settingGroup.children" :key="c.path" :index="c.path">
+            {{ c.title }}
+          </el-menu-item>
+        </el-sub-menu>
       </el-menu>
     </el-aside>
 
