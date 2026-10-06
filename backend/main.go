@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
+	"github.com/redis/go-redis/v9"
 )
 
 // Server 持有全局依赖
@@ -15,6 +16,7 @@ type Server struct {
 	cfg *Config
 	db  *sql.DB
 	ch  clickhouse.Conn
+	rdb *redis.Client // 可选：登录防爆破 / 告警去重 / 统计缓存（nil 时降级 MySQL）
 }
 
 func main() {
@@ -33,6 +35,11 @@ func main() {
 	}
 	defer ch.Close()
 
+	rdb := initRedis() // 可选，失败降级
+	if rdb != nil {
+		defer rdb.Close()
+	}
+
 	if pw, err := ensureAdmin(cfg, db); err != nil {
 		log.Fatalf("初始化 admin 用户失败: %v", err)
 	} else if pw != "" {
@@ -42,7 +49,7 @@ func main() {
 		log.Printf("==============================================")
 	}
 
-	s := &Server{cfg: cfg, db: db, ch: ch}
+	s := &Server{cfg: cfg, db: db, ch: ch, rdb: rdb}
 	mux := http.NewServeMux()
 
 	// ---- M2 认证 ----

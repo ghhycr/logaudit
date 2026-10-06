@@ -19,17 +19,17 @@ echo "==================== 容器化部署验证 ===================="
 echo "[INFO] 目标: $BASE_URL"
 
 echo ""
-echo "[1/10] 容器状态"
+echo "[1/11] 容器状态"
 docker compose ps --format "table {{.Name}}\t{{.Status}}" || err "docker compose ps 失败"
 
 echo ""
-echo "[2/10] 端口监听"
+echo "[2/11] 端口监听"
 for p in 80 443; do
   ss -lnt | grep -q ":$p " && ok "监听 $p/tcp" || err "未监听 $p/tcp"
 done
 
 echo ""
-echo "[3/10] 安全响应头（等保三级）"
+echo "[3/11] 安全响应头（等保三级）"
 HDRS=$(curl -skI --max-time 10 "$BASE_URL/" 2>/dev/null || true)
 check_hdr() {
   local name="$1" pattern="$2"
@@ -47,7 +47,7 @@ else
 fi
 
 echo ""
-echo "[4/10] 前端资源与 SPA 回退"
+echo "[4/11] 前端资源与 SPA 回退"
 code=$(curl -sk --max-time 10 -o /dev/null -w "%{http_code}" "$BASE_URL/")
 [ "$code" = "200" ] && ok "首页 HTTP $code" || err "首页 HTTP $code（检查 dist 挂载与 audit.conf）"
 body=$(curl -sk --max-time 10 "$BASE_URL/dashboard" 2>/dev/null || true)
@@ -55,7 +55,7 @@ echo "$body" | grep -qi "index.html\|<div id=\"app\"\|<script" \
   && ok "SPA 路由回退正常" || err "SPA 路由回退异常（/dashboard 未返回应用壳）"
 
 echo ""
-echo "[5/10] API 认证链路（M2：真实后端登录验证）"
+echo "[5/11] API 认证链路（M2：真实后端登录验证）"
 api_code=$(curl -sk --max-time 10 -o /dev/null -w "%{http_code}" "$BASE_URL/api/v1/auth/me" 2>/dev/null || true)
 case "$api_code" in
   401) ok "API 反代连通（未授权返回 401 正常）" ;;
@@ -80,7 +80,7 @@ else
 fi
 
 echo ""
-echo "[6/10] TLS 证书"
+echo "[6/11] TLS 证书"
 if [ -f certs/audit.crt ]; then
   enddate=$(openssl x509 -in certs/audit.crt -noout -enddate 2>/dev/null | cut -d= -f2)
   days=$(( ( $(date -d "$enddate" +%s) - $(date +%s) ) / 86400 ))
@@ -88,7 +88,7 @@ if [ -f certs/audit.crt ]; then
 fi
 
 echo ""
-echo "[7/10] ClickHouse 存储就绪"
+echo "[7/11] ClickHouse 存储就绪"
 if docker exec audit-clickhouse clickhouse-client --password "${CLICKHOUSE_PASSWORD:-audit2026}" -q \
   "SELECT concat('audit_logs rows=', toString(count())) FROM audit.audit_logs" 2>/dev/null; then
   ok "ClickHouse audit.audit_logs 可查询"
@@ -97,7 +97,7 @@ else
 fi
 
 echo ""
-echo "[8/10] M3 日志检索链路（logs/search + retention）"
+echo "[8/11] M3 日志检索链路（logs/search + retention）"
 M3_TOKEN=$(curl -sk --max-time 10 -X POST "$BASE_URL/api/v1/auth/login" -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"'"$ADMIN_PASS"'"}' 2>/dev/null \
   | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
@@ -118,7 +118,7 @@ else
 fi
 
 echo ""
-echo "[9/10] Vector 采集器（M4：514 syslog → ClickHouse）"
+echo "[9/11] Vector 采集器（M4：514 syslog → ClickHouse）"
 if docker ps --format '{{.Names}}' | grep -q '^audit-vector$'; then
   ok "audit-vector 容器运行中"
 else
@@ -137,7 +137,7 @@ case "$ch_rows" in
 esac
 
 echo ""
-echo "[10/10] M5 告警引擎（rules + events 接口）"
+echo "[10/11] M5 告警引擎（rules + events 接口）"
 if [ -n "$M3_TOKEN" ]; then
   ar_code=$(curl -sk --max-time 10 -o /tmp/audit_m5.json -w "%{http_code}" \
     "$BASE_URL/api/v1/alerts/rules" -H "Authorization: Bearer $M3_TOKEN" 2>/dev/null || true)
@@ -152,6 +152,26 @@ if [ -n "$M3_TOKEN" ]; then
   [ "$ae_code" = "200" ] && ok "告警事件接口正常" || warn "告警事件接口 HTTP $ae_code"
 else
   warn "未取得 M5 验证 token（admin 已改密则跳过）"
+fi
+
+echo ""
+echo "[11/11] Redis 优化层（登录防爆破 / 告警去重 / 统计缓存）"
+if command -v redis-cli >/dev/null 2>&1 && redis-cli -a "${REDIS_PASSWORD:-audit2026}" --no-auth-warning ping 2>/dev/null | grep -q PONG; then
+  ok "Redis 服务正常（PONG）"
+else
+  err "Redis 未就绪（容器部署需 redis 服务；宿主机部署需 redis-server）"
+fi
+if [ -n "$M3_TOKEN" ]; then
+  curl -sk --max-time 10 -o /dev/null "$BASE_URL/api/v1/stats/overview" -H "Authorization: Bearer $M3_TOKEN" 2>/dev/null || true
+  sleep 1
+  ttl=$(redis-cli -a "${REDIS_PASSWORD:-audit2026}" --no-auth-warning TTL stats:overview 2>/dev/null || echo "")
+  if [ -n "$ttl" ] && [ "$ttl" != "-2" ]; then
+    ok "统计缓存生效（stats:overview TTL=${ttl}s）"
+  else
+    warn "统计缓存未写入（接口未触发或 Redis 连接异常）"
+  fi
+else
+  warn "未取得验证 token（admin 已改密则跳过缓存检查）"
 fi
 
 echo ""

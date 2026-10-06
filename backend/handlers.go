@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -47,6 +48,48 @@ type loginReq struct {
 	Password string `json:"password"`
 }
 
+// ---- Redis 登录防爆破辅助（等保三级：连续失败锁定）----
+
+// redisLoginBlocked Redis 快速锁定检查（存在 lock 键即锁定）
+func (s *Server) redisLoginBlocked(username string) bool {
+	if s.rdb == nil {
+		return false
+	}
+	n, err := s.rdb.Exists(context.Background(), "lock:"+username).Result()
+	return err == nil && n > 0
+}
+
+// redisFailIncr Redis 失败计数：达到阈值则写入锁定键并返回 true
+func (s *Server) redisFailIncr(username string) (bool, error) {
+	if s.rdb == nil {
+		return false, nil
+	}
+	ctx := context.Background()
+	key := "fail:" + username
+	n, err := s.rdb.Incr(ctx, key).Result()
+	if err != nil {
+		return false, err
+	}
+	if n == 1 {
+		s.rdb.Expire(ctx, key, 10*time.Minute) // 计数窗口 10 分钟
+	}
+	if n >= int64(s.cfg.LockThreshold) {
+		s.rdb.Del(ctx, key)
+		lockDur := time.Duration(s.cfg.LockMinutes) * time.Minute
+		return true, s.rdb.Set(ctx, "lock:"+username, "1", lockDur).Err()
+	}
+	return false, nil
+}
+
+// redisLoginClear 登录成功清除失败计数与锁定
+func (s *Server) redisLoginClear(username string) {
+	if s.rdb == nil {
+		return
+	}
+	ctx := context.Background()
+	s.rdb.Del(ctx, "fail:"+username, "lock:"+username)
+}
+
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -56,6 +99,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	req.Username = strings.TrimSpace(req.Username)
 	if req.Username == "" || req.Password == "" {
 		fail(w, http.StatusBadRequest, 4000, "用户名与密码不能为空")
+		return
+	}
+
+	// Redis 快速锁定拦截（未接入 Redis 时走 MySQL 检查）
+	if s.redisLoginBlocked(req.Username) {
+		fail(w, http.StatusLocked, 4230, "连续登录失败次数过多，账号已锁定（等保三级安全策略）")
 		return
 	}
 
@@ -83,6 +132,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !checkPassword(u.PasswordHash, req.Password) {
+		// Redis 计数（防爆破高频写入 MySQL 的压力优化层）
+		redisLocked, _ := s.redisFailIncr(req.Username)
+
 		newCount := u.FailCount + 1
 		var lockUntil *time.Time
 		if newCount >= s.cfg.LockThreshold {
@@ -96,7 +148,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		); err != nil {
 			log.Printf("更新失败计数失败: %v", err)
 		}
-		if lockUntil != nil {
+		if lockUntil != nil || redisLocked {
 			s.audit(u.Username, "login", "", clientIP(r), "登录失败：连续"+itoa(s.cfg.LockThreshold)+"次错误触发锁定")
 			fail(w, http.StatusLocked, 4230, "连续登录失败次数过多，账号已锁定 "+itoa(s.cfg.LockMinutes)+" 分钟（等保三级安全策略）")
 			return
@@ -107,6 +159,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 登录成功
+	s.redisLoginClear(req.Username)
 	if _, err := s.db.Exec(
 		"UPDATE users SET fail_count=0, lock_until=NULL, last_login_at=? WHERE id=?",
 		now, u.ID,

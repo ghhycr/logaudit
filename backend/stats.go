@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 )
@@ -11,6 +12,16 @@ import (
 // 返回: today_total / last_7d / category_dist / top_sources / top_events
 
 func (s *Server) handleStatsOverview(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	// Redis 缓存命中（60s，降低 ClickHouse 聚合查询压力）
+	if s.rdb != nil {
+		if v, err := s.rdb.Get(ctx, "stats:overview").Result(); err == nil && v != "" {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_, _ = w.Write([]byte(v))
+			return
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 
@@ -99,18 +110,33 @@ func (s *Server) handleStatsOverview(w http.ResponseWriter, r *http.Request) {
 		rows.Close()
 	}
 
-	ok(w, map[string]any{
-		"today_total":  todayTotal,
-		"last_7d":      last7,
+	data := map[string]any{
+		"today_total":   todayTotal,
+		"last_7d":       last7,
 		"category_dist": cats,
-		"top_sources":  srcs,
-		"top_events":   evs,
-	})
+		"top_sources":   srcs,
+		"top_events":    evs,
+	}
+	// 写入 Redis 缓存（60s）
+	if s.rdb != nil {
+		if b, err := json.Marshal(map[string]any{"code": 0, "message": "ok", "data": data}); err == nil {
+			s.rdb.Set(ctx, "stats:overview", b, 60*time.Second)
+		}
+	}
+	ok(w, data)
 }
 
 // ==================== 登录失败统计 ====================
-// GET /api/v1/stats/login-fail（近 7 天，来自 MySQL 操作审计）
+// GET /api/v1/stats/login-fail（近 7 天，来自 MySQL 操作审计；Redis 缓存 30s）
 func (s *Server) handleLoginFailStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if s.rdb != nil {
+		if v, err := s.rdb.Get(ctx, "stats:login-fail").Result(); err == nil && v != "" {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_, _ = w.Write([]byte(v))
+			return
+		}
+	}
 	rows, err := s.db.Query(
 		`SELECT DATE(ts) d, COUNT(*) c FROM op_audits
 		 WHERE action='login' AND detail LIKE '%失败%' AND ts >= NOW() - INTERVAL 6 DAY
@@ -130,6 +156,11 @@ func (s *Server) handleLoginFailStats(w http.ResponseWriter, r *http.Request) {
 		var dc dayCount
 		if rows.Scan(&dc.Day, &dc.Count) == nil {
 			out = append(out, dc)
+		}
+	}
+	if s.rdb != nil {
+		if b, err := json.Marshal(map[string]any{"code": 0, "message": "ok", "data": out}); err == nil {
+			s.rdb.Set(ctx, "stats:login-fail", b, 30*time.Second)
 		}
 	}
 	ok(w, out)

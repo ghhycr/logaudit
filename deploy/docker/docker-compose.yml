@@ -69,6 +69,17 @@ services:
       retries: 30
     restart: unless-stopped
 
+  # ---------- Redis（登录防爆破 / 告警去重 / 统计缓存，可选优化层） ----------
+  redis:
+    image: redis:7-alpine
+    container_name: audit-redis
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-audit2026}", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    ports:
+      - "127.0.0.1:6379:6379"   # 仅本机（等保：不对外暴露）
+    restart: unless-stopped
+
   # ---------- 自研 Go API（M2 认证服务；nginx 反代 /api/ → api:8080） ----------
   api:
     build: ./api
@@ -78,8 +89,12 @@ services:
       PORT: "8080"
       MYSQL_DSN: "audit:${MYSQL_PASSWORD:-audit2026}@tcp(mysql:3306)/audit_meta?parseTime=true&charset=utf8mb4&loc=Local&multiStatements=true"
       CLICKHOUSE_DSN: "clickhouse://default:${CLICKHOUSE_PASSWORD:-audit2026}@clickhouse:9000/audit?dial_timeout=5s&read_timeout=60s"
+      REDIS_ADDR: "${REDIS_ADDR:-redis:6379}"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-audit2026}
       JWT_SECRET: ${JWT_SECRET:-change-me-please-9f2c4e1a}
       ADMIN_INIT_PASSWORD: ${ADMIN_INIT_PASSWORD:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # 宿主机 Redis 部署时 REDIS_ADDR=host.docker.internal:6379
     depends_on:
       mysql:
         condition: service_healthy
@@ -110,3 +125,4 @@ volumes:
   ch-data:
   mysql-data:
   vector-data:
+  redis-data:

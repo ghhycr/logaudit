@@ -359,9 +359,21 @@ func alertFilterConds(f QueryFilter) ([]string, []any) {
 	return conds, args
 }
 
-// alertRecent realert 检查：同规则+key 在窗口内是否已产生告警
-// 注意：MySQL 预处理语句不支持 INTERVAL ? 参数化，窗口秒数须直接拼接（int 类型，非注入面）
+// alertRecent realert 去重检查：同规则+key 在 realert 窗口内是否已产生告警
+// Redis 优先（SET NX + EXPIRE 原子去重）；未接入 Redis 时回退 MySQL 窗口查询
 func (s *Server) alertRecent(ruleID int64, key string, windowSec int) bool {
+	if s.rdb != nil {
+		ctx := context.Background()
+		rkey := fmt.Sprintf("alert:realert:%d:%s", ruleID, key)
+		// NX 成功 = 窗口内首次触发（放行并标记）；失败 = 窗口内已告警（去重）
+		ok, err := s.rdb.SetNX(ctx, rkey, "1", time.Duration(windowSec)*time.Second).Result()
+		if err != nil {
+			log.Printf("[alert] Redis 去重检查失败（%v），回退 MySQL", err)
+		} else {
+			return !ok
+		}
+	}
+	// MySQL 回退：窗口内存在告警事件即去重
 	var n int
 	_ = s.db.QueryRow(
 		`SELECT COUNT(*) FROM alert_events
