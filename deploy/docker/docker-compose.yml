@@ -32,7 +32,7 @@ services:
       CLICKHOUSE_DB: audit
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-audit2026}
     volumes:
-      - ch-data:/var/lib/clickhouse
+      - /data/clickhouse:/var/lib/clickhouse   # 日志数据盘 sdb → /data/clickhouse
       - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
       - "127.0.0.1:8123:8123"   # HTTP 接口，仅本机（等保：不对外暴露数据库）
@@ -125,7 +125,6 @@ services:
 
 volumes:
   nginx-logs:
-  ch-data:
   mysql-data:
   vector-data:
   redis-data:
