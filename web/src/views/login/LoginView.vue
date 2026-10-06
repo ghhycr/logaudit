@@ -9,10 +9,6 @@ const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 
-// 等保三级锁定策略参数（模板中不能直接访问 import.meta.env，须在 script 取值）
-const lockThreshold = Number(import.meta.env.VITE_LOGIN_FAIL_LOCK_THRESHOLD || 5)
-const lockMinutes = Number(import.meta.env.VITE_LOGIN_FAIL_LOCK_MINUTES || 10)
-
 const formRef = ref<FormInstance>()
 const loading = ref(false)
 const form = reactive({ username: '', password: '' })
@@ -29,7 +25,11 @@ async function onSubmit(): Promise<void> {
   try {
     await auth.login(form.username, form.password)
     audit('login', form.username)
-    ElMessage.success('登录成功')
+    if (auth.needChangePassword) {
+      ElMessage.warning('密码已到有效期，请尽快修改密码（系统设置或右上角修改）')
+    } else {
+      ElMessage.success('登录成功')
+    }
     const redirect = (route.query.redirect as string) || '/dashboard'
     void router.push(redirect)
   } catch (e) {
@@ -78,9 +78,7 @@ async function onSubmit(): Promise<void> {
         </el-button>
       </el-form>
 
-      <div class="foot">
-        连续失败 {{ lockThreshold }} 次将锁定 {{ lockMinutes }} 分钟 ｜ 会话空闲 15 分钟自动登出
-      </div>
+      <div class="foot"></div>
     </div>
   </div>
 </template>

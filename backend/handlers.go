@@ -102,6 +102,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 系统访问白名单（基础设置；空名单 = 不限制）
+	bs := s.loadBaseSettings()
+	srcIP := clientIP(r)
+	if !ipAllowed(srcIP, bs.WhitelistIps) {
+		s.audit(req.Username, "login", "", srcIP, "登录被拒：来源 IP 不在系统访问白名单内")
+		fail(w, http.StatusForbidden, 4033, "当前访问来源不在系统白名单内，请联系管理员")
+		return
+	}
+
 	// Redis 快速锁定拦截（未接入 Redis 时走 MySQL 检查）
 	if s.redisLoginBlocked(req.Username) {
 		fail(w, http.StatusLocked, 4230, "连续登录失败次数过多，账号已锁定（等保三级安全策略）")
@@ -115,7 +124,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if u == nil {
-		s.audit(req.Username, "login", "", clientIP(r), "登录失败：用户不存在")
+		s.audit(req.Username, "login", "", srcIP, "登录失败：用户不存在")
 		fail(w, http.StatusUnauthorized, 4010, "用户名或密码错误")
 		return
 	}
@@ -123,7 +132,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusForbidden, 4030, "账号已被停用")
 		return
 	}
-	// 锁定检查（等保三级：连续失败锁定）
+	// 锁定检查（等保三级：连续失败锁定，阈值/时长来自基础设置）
 	now := time.Now()
 	if u.LockUntil != nil && u.LockUntil.After(now) {
 		remain := int(u.LockUntil.Sub(now).Minutes()) + 1
@@ -137,8 +146,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 		newCount := u.FailCount + 1
 		var lockUntil *time.Time
-		if newCount >= s.cfg.LockThreshold {
-			t := now.Add(time.Duration(s.cfg.LockMinutes) * time.Minute)
+		if newCount >= bs.MaxFailCount {
+			t := now.Add(time.Duration(bs.LockMinutes) * time.Minute)
 			lockUntil = &t
 			newCount = 0
 		}
@@ -149,12 +158,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			log.Printf("更新失败计数失败: %v", err)
 		}
 		if lockUntil != nil || redisLocked {
-			s.audit(u.Username, "login", "", clientIP(r), "登录失败：连续"+itoa(s.cfg.LockThreshold)+"次错误触发锁定")
-			fail(w, http.StatusLocked, 4230, "连续登录失败次数过多，账号已锁定 "+itoa(s.cfg.LockMinutes)+" 分钟（等保三级安全策略）")
+			s.audit(u.Username, "login", "", srcIP, "登录失败：连续"+itoa(bs.MaxFailCount)+"次错误触发锁定")
+			fail(w, http.StatusLocked, 4230, "连续登录失败次数过多，账号已锁定 "+itoa(bs.LockMinutes)+" 分钟（等保三级安全策略）")
 			return
 		}
-		s.audit(u.Username, "login", "", clientIP(r), "登录失败：密码错误")
-		fail(w, http.StatusUnauthorized, 4010, "用户名或密码错误（剩余尝试次数："+itoa(s.cfg.LockThreshold-newCount)+"）")
+		s.audit(u.Username, "login", "", srcIP, "登录失败：密码错误")
+		fail(w, http.StatusUnauthorized, 4010, "用户名或密码错误（剩余尝试次数："+itoa(bs.MaxFailCount-newCount)+"）")
 		return
 	}
 
@@ -170,13 +179,22 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	u.LockUntil = nil
 	u.LastLoginAt = &now
 
-	// 签发令牌
+	// 密码有效期检查（基础设置；到期返回 need_change_password 提示）
+	needPwdChange := false
+	if bs.PwdExpireDays > 0 && u.PasswordChangedAt != nil {
+		if time.Since(*u.PasswordChangedAt) > time.Duration(bs.PwdExpireDays)*24*time.Hour {
+			needPwdChange = true
+		}
+	}
+
+	// 签发令牌（会话超时 = 基础设置 session_timeout_minutes）
 	csrf, err := randomHex(16)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, 5000, "系统繁忙，请稍后再试")
 		return
 	}
-	access, err := signAccess(s.cfg, u, csrf)
+	sessTTL := time.Duration(bs.SessionTimeoutMinutes) * time.Minute
+	access, err := signAccessWithTTL(s.cfg, u, csrf, sessTTL)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, 5000, "令牌签发失败")
 		return
@@ -187,13 +205,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.audit(u.Username, "login", "", clientIP(r), "登录成功")
+	s.audit(u.Username, "login", "", srcIP, "登录成功")
 	ok(w, map[string]any{
-		"access_token":  access,
-		"refresh_token": refresh,
-		"expires_in":    int(s.cfg.AccessTTL.Seconds()),
-		"csrf_token":    csrf,
-		"user":          u.public(),
+		"access_token":          access,
+		"refresh_token":         refresh,
+		"expires_in":            int(sessTTL.Seconds()),
+		"csrf_token":            csrf,
+		"session_timeout_minutes": bs.SessionTimeoutMinutes,
+		"need_change_password":  needPwdChange,
+		"user":                  u.public(),
 	})
 }
 
@@ -312,7 +332,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusForbidden, 4032, "原密码错误")
 		return
 	}
-	if err := validatePasswordStrength(req.NewPassword); err != nil {
+	if err := s.validatePasswordWithPolicy(req.NewPassword); err != nil {
 		fail(w, http.StatusBadRequest, 4001, err.Error())
 		return
 	}
@@ -321,7 +341,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, 5000, "系统繁忙")
 		return
 	}
-	if _, err := s.db.Exec("UPDATE users SET password_hash=? WHERE id=?", hash, u.ID); err != nil {
+	if _, err := s.db.Exec("UPDATE users SET password_hash=?, password_changed_at=? WHERE id=?", hash, time.Now(), u.ID); err != nil {
 		fail(w, http.StatusInternalServerError, 5000, "密码更新失败")
 		return
 	}

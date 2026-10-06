@@ -80,29 +80,8 @@ func randomHex(n int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// 等保三级密码复杂度复核（与前端 utils/password.ts 一致）
-func validatePasswordStrength(pw string) error {
-	if len(pw) < 8 {
-		return errors.New("密码长度不得少于 8 位")
-	}
-	hasUpper, hasLower, hasDigit, hasSpecial := false, false, false, false
-	for _, c := range pw {
-		switch {
-		case c >= 'A' && c <= 'Z':
-			hasUpper = true
-		case c >= 'a' && c <= 'z':
-			hasLower = true
-		case c >= '0' && c <= '9':
-			hasDigit = true
-		default:
-			hasSpecial = true
-		}
-	}
-	if !hasUpper || !hasLower || !hasDigit || !hasSpecial {
-		return errors.New("密码须同时包含大写字母、小写字母、数字与特殊字符")
-	}
-	return nil
-}
+// 等保三级密码复杂度复核（按基础设置策略；由 Server.validatePasswordWithPolicy 提供）
+var _ = errors.New
 
 // ==================== JWT ====================
 
@@ -115,6 +94,10 @@ type Claims struct {
 }
 
 func signAccess(cfg *Config, u *User, csrf string) (string, error) {
+	return signAccessWithTTL(cfg, u, csrf, cfg.AccessTTL)
+}
+
+func signAccessWithTTL(cfg *Config, u *User, csrf string, ttl time.Duration) (string, error) {
 	now := time.Now()
 	claims := Claims{
 		UserID: u.ID, Username: u.Username, Role: u.Role, CSRF: csrf,
@@ -122,7 +105,7 @@ func signAccess(cfg *Config, u *User, csrf string) (string, error) {
 			Issuer:    "logaudit-api",
 			Subject:   u.Username,
 			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(cfg.AccessTTL)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 		},
 	}
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(cfg.JWTSecret)

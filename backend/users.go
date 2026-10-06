@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ==================== 用户管理（系统设置 · 用户管理，仅 admin） ====================
@@ -35,8 +36,8 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, 4000, "用户名长度须在 3-64 字符之间")
 		return
 	}
-	if len(req.Password) < 8 {
-		fail(w, http.StatusBadRequest, 4000, "密码长度不得少于 8 位（等保三级口令策略）")
+	if err := s.validatePasswordWithPolicy(req.Password); err != nil {
+		fail(w, http.StatusBadRequest, 4000, err.Error())
 		return
 	}
 	if req.Role == "" {
@@ -52,8 +53,8 @@ func (s *Server) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := s.db.Exec(
-		`INSERT INTO users (username, password_hash, display_name, role, status) VALUES (?,?,?,?,1)`,
-		req.Username, hash, req.DisplayName, req.Role,
+		`INSERT INTO users (username, password_hash, display_name, role, status, password_changed_at) VALUES (?,?,?,?,1,?)`,
+		req.Username, hash, req.DisplayName, req.Role, time.Now(),
 	)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, 5000, "用户创建失败（用户名可能已存在）")
@@ -192,8 +193,8 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 	if pw == "" {
 		pw = randomPassword(14)
 	}
-	if len(pw) < 8 {
-		fail(w, http.StatusBadRequest, 4000, "密码长度不得少于 8 位")
+	if err := s.validatePasswordWithPolicy(pw); err != nil {
+		fail(w, http.StatusBadRequest, 4000, err.Error())
 		return
 	}
 	hash, err := hashPassword(pw)
@@ -202,8 +203,8 @@ func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.db.Exec(
-		"UPDATE users SET password_hash=?, fail_count=0, lock_until=NULL WHERE id=?",
-		hash, id,
+		"UPDATE users SET password_hash=?, fail_count=0, lock_until=NULL, password_changed_at=? WHERE id=?",
+		hash, time.Now(), id,
 	); err != nil {
 		fail(w, http.StatusInternalServerError, 5000, "密码重置失败: "+err.Error())
 		return

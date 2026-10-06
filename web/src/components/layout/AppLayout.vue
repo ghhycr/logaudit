@@ -24,6 +24,7 @@ const menus = computed(() => {
   const settingGroup: { title: string; icon: string; children: { path: string; title: string }[] } = {
     title: '系统设置', icon: 'Setting',
     children: [
+      { path: '/settings/base', title: '基础设置' },
       { path: '/settings/users', title: '用户管理' },
       { path: '/settings/roles', title: '权限管理' },
       { path: '/settings/ntp', title: 'NTP服务器配置' },
@@ -77,7 +78,7 @@ async function onLogout(): Promise<void> {
           </el-menu-item>
         </el-sub-menu>
 
-        <!-- 系统设置：用户管理 / 权限管理 / NTP 配置 / 留存与容量（仅 admin） -->
+        <!-- 系统设置：基础设置 / 用户管理 / 权限管理 / NTP 配置 / 留存与容量（仅 admin） -->
         <el-sub-menu v-if="menus.isAdmin" index="settings-group">
           <template #title>
             <el-icon><component :is="menus.settingGroup.icon" /></el-icon>

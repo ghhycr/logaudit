@@ -87,6 +87,12 @@ const routes: RouteRecordRaw[] = [
         name: 'settings-ntp',
         component: () => import('@/views/settings/NtpConfigView.vue'),
         meta: { title: 'NTP服务器配置', roles: ['admin'] }
+      },
+      {
+        path: 'settings/base',
+        name: 'settings-base',
+        component: () => import('@/views/settings/BasicSettingsView.vue'),
+        meta: { title: '基础设置', roles: ['admin'] }
       }
     ]
   },

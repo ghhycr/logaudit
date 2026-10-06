@@ -13,15 +13,16 @@ import (
 // ==================== 模型 ====================
 
 type User struct {
-	ID           int64      `json:"id"`
-	Username     string     `json:"username"`
-	PasswordHash string     `json:"-"`
-	DisplayName  string     `json:"display_name"`
-	Role         string     `json:"role"`
-	Status       int        `json:"-"` // 1 正常 0 停用
-	FailCount    int        `json:"-"`
-	LockUntil    *time.Time `json:"-"`
-	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
+	ID               int64      `json:"id"`
+	Username         string     `json:"username"`
+	PasswordHash     string     `json:"-"`
+	DisplayName      string     `json:"display_name"`
+	Role             string     `json:"role"`
+	Status           int        `json:"-"` // 1 正常 0 停用
+	FailCount        int        `json:"-"`
+	LockUntil        *time.Time `json:"-"`
+	LastLoginAt      *time.Time `json:"last_login_at,omitempty"`
+	PasswordChangedAt *time.Time `json:"-"`
 }
 
 // ==================== 初始化 ====================
@@ -37,6 +38,7 @@ CREATE TABLE IF NOT EXISTS users (
   fail_count   INT          NOT NULL DEFAULT 0,
   lock_until   DATETIME     NULL,
   last_login_at DATETIME    NULL,
+  password_changed_at DATETIME NULL,
   created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   KEY idx_role (role)
@@ -154,7 +156,23 @@ func initDB(cfg *Config) (*sql.DB, error) {
 			return nil, fmt.Errorf("执行建表失败: %w", err)
 		}
 	}
+	// 幂等迁移：旧库补充 password_changed_at 列（MySQL 无 ADD COLUMN IF NOT EXISTS）
+	ensureColumn(db, "users", "password_changed_at", "DATETIME NULL")
 	return db, nil
+}
+
+// ensureColumn 检查列存在性，不存在则 ALTER 添加（幂等）
+func ensureColumn(db *sql.DB, table, column, ddl string) {
+	var n int
+	if err := db.QueryRow(
+		"SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=? AND column_name=?",
+		table, column,
+	).Scan(&n); err != nil || n > 0 {
+		return
+	}
+	if _, err := db.Exec("ALTER TABLE " + table + " ADD COLUMN " + column + " " + ddl); err != nil {
+		log.Printf("迁移 %s.%s 失败: %v", table, column, err)
+	}
 }
 
 // ensureAdmin 首次启动时创建初始 admin 用户
@@ -194,9 +212,9 @@ func ensureAdmin(cfg *Config, db *sql.DB) (string, error) {
 func getUserByName(db *sql.DB, username string) (*User, error) {
 	u := &User{}
 	err := db.QueryRow(
-		`SELECT id, username, password_hash, display_name, role, status, fail_count, lock_until, last_login_at
+		`SELECT id, username, password_hash, display_name, role, status, fail_count, lock_until, last_login_at, password_changed_at
 		 FROM users WHERE username=?`, username,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.Role, &u.Status, &u.FailCount, &u.LockUntil, &u.LastLoginAt)
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.Role, &u.Status, &u.FailCount, &u.LockUntil, &u.LastLoginAt, &u.PasswordChangedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -206,9 +224,9 @@ func getUserByName(db *sql.DB, username string) (*User, error) {
 func getUserByID(db *sql.DB, id int64) (*User, error) {
 	u := &User{}
 	err := db.QueryRow(
-		`SELECT id, username, password_hash, display_name, role, status, fail_count, lock_until, last_login_at
+		`SELECT id, username, password_hash, display_name, role, status, fail_count, lock_until, last_login_at, password_changed_at
 		 FROM users WHERE id=?`, id,
-	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.Role, &u.Status, &u.FailCount, &u.LockUntil, &u.LastLoginAt)
+	).Scan(&u.ID, &u.Username, &u.PasswordHash, &u.DisplayName, &u.Role, &u.Status, &u.FailCount, &u.LockUntil, &u.LastLoginAt, &u.PasswordChangedAt)
 	if err != nil {
 		return nil, err
 	}

@@ -9,7 +9,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { login as apiLogin, refreshToken as apiRefresh, logout as apiLogout, fetchMe } from '@/api/auth'
 import { audit } from '@/utils/audit'
-import { startSessionMonitor, stopSessionMonitor } from '@/utils/session'
+import { startSessionMonitor, stopSessionMonitor, setSessionTimeoutMinutes } from '@/utils/session'
 import type { UserInfo, UserRole } from '@/types'
 
 const LOCK_THRESHOLD = Number(import.meta.env.VITE_LOGIN_FAIL_LOCK_THRESHOLD || 5)
@@ -23,6 +23,7 @@ export const useAuthStore = defineStore('auth', () => {
   const loginFails = ref(0)
   const lockUntil = ref<number | null>(null)   // 时间戳
   const idleWarning = ref(false)
+  const needChangePassword = ref(false)         // 基础设置·密码有效期到期标志
 
   const isLoggedIn = computed(() => !!accessToken.value && !!user.value)
   const role = computed<UserRole | null>(() => user.value?.role ?? null)
@@ -46,6 +47,11 @@ export const useAuthStore = defineStore('auth', () => {
       loginFails.value = 0
       lockUntil.value = null
       idleWarning.value = false
+      needChangePassword.value = !!d.need_change_password
+      // 会话空闲超时由基础设置下发（未下发用默认 15 分钟）
+      if (d.session_timeout_minutes) {
+        setSessionTimeoutMinutes(d.session_timeout_minutes)
+      }
       audit('login', username)
       startSessionMonitor()
     } catch (e) {
@@ -89,6 +95,7 @@ export const useAuthStore = defineStore('auth', () => {
     csrfToken.value = null
     user.value = null
     idleWarning.value = false
+    needChangePassword.value = false
     stopSessionMonitor()
   }
 
@@ -97,7 +104,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   return {
-    accessToken, refreshToken, csrfToken, user, loginFails, lockUntil, idleWarning,
+    accessToken, refreshToken, csrfToken, user, loginFails, lockUntil, idleWarning, needChangePassword,
     isLoggedIn, role, canWrite, login, refresh, restore, logout, warnIdle
   }
 })

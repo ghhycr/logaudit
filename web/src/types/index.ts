@@ -6,6 +6,8 @@ export interface LoginResponse {
   refresh_token: string
   expires_in: number          // access token 有效期（秒）
   csrf_token?: string         // CSRF 防护令牌（服务端下发；写请求附带 X-XSRF-TOKEN）
+  session_timeout_minutes?: number // 会话空闲超时（分钟，基础设置）
+  need_change_password?: boolean   // 密码已到期，需要修改（基础设置·密码有效期）
   user: UserInfo
 }
 
