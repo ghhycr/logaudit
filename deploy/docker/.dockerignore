@@ -1,0 +1,8 @@
+# docker build 上下文排除（上下文 = 项目根 /opt/audit）
+web/node_modules
+web/dist
+web/scripts
+deploy/certs
+deploy/docker/clickhouse/data
+*.log
+.git

@@ -1,0 +1,26 @@
+# --- 依赖与构建产物 ---
+node_modules/
+dist/
+*.local
+
+# --- 环境与密钥（严禁入库） ---
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+!certs/.gitkeep
+
+# --- 部署运行时 ---
+deploy/docker/api/audit-api
+deploy/docker/certs/
+deploy/docker/api-stub/
+deploy/docker/vector/vector.tar.gz
+
+# --- 临时与日志 ---
+*.log
+tmp/
+/tmp/
+.DS_Store
+Thumbs.db
+.preview/

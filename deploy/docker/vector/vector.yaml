@@ -1,0 +1,89 @@
+# Vector 采集器配置 —— 日志审计平台
+# 功能: 监听 514 UDP/TCP（syslog）→ 解析 RFC3164/5424 → 分类 event_type → 写入 ClickHouse audit.audit_logs
+# 字段映射对齐后端/前端契约: ts host program pid severity facility source_ip user_name event_type outcome message raw
+
+data_dir: /var/lib/vector
+
+api:
+  enabled: true
+  address: 0.0.0.0:8686
+
+sources:
+  syslog_udp:
+    type: syslog
+    address: "0.0.0.0:514"
+    mode: udp
+    max_length: 102400
+
+  syslog_tcp:
+    type: syslog
+    address: "0.0.0.0:514"
+    mode: tcp
+    max_length: 102400
+
+transforms:
+  parse_logs:
+    type: remap
+    inputs: [syslog_udp, syslog_tcp]
+    source: |
+      # ---- 基础字段（syslog 解析结果）----
+      # ts 需转 ClickHouse 格式 'YYYY-MM-DD HH:MM:SS' 且按 Asia/Shanghai 列时区（ISO 带 Z 会插入失败）
+      .ts = format_timestamp!(.timestamp, format: "%Y-%m-%d %H:%M:%S", timezone: "Asia/Shanghai")
+      .host = if is_empty(string!(.hostname)) { "unknown" } else { .hostname }
+      .program = string!(.appname)
+      if exists(."procid") { .pid = to_int!(."procid") } else { .pid = 0 }
+
+      # ---- severity / facility 文字 -> 数字（RFC3164 标准值，单行 if/else 链）----
+      .sev_str = string!(.severity)
+      .severity = if .sev_str == "emerg" { 0 } else if .sev_str == "alert" { 1 } else if .sev_str == "crit" { 2 } else if .sev_str == "err" { 3 } else if .sev_str == "warning" { 4 } else if .sev_str == "notice" { 5 } else if .sev_str == "debug" { 7 } else { 6 }
+      del(.sev_str)
+
+      .fac_str = string!(.facility)
+      .facility = if .fac_str == "kern" { 0 } else if .fac_str == "user" { 1 } else if .fac_str == "mail" { 2 } else if .fac_str == "daemon" { 3 } else if .fac_str == "auth" { 4 } else if .fac_str == "syslog" { 5 } else if .fac_str == "lpr" { 6 } else if .fac_str == "news" { 7 } else if .fac_str == "uucp" { 8 } else if .fac_str == "cron" { 9 } else if .fac_str == "authpriv" { 10 } else if .fac_str == "ftp" { 11 } else if .fac_str == "ntp" { 12 } else if .fac_str == "local0" { 16 } else if .fac_str == "local1" { 17 } else if .fac_str == "local2" { 18 } else if .fac_str == "local3" { 19 } else if .fac_str == "local4" { 20 } else if .fac_str == "local5" { 21 } else if .fac_str == "local6" { 22 } else if .fac_str == "local7" { 23 } else { 1 }
+      del(.fac_str)
+
+      # ---- 事件分类（关键词规则，可按业务扩充）----
+      .msg = string!(.message)
+      .event_type = if contains(.msg, "Failed password") { "ssh_bruteforce" } else if contains(.msg, "bruteforce") { "ssh_bruteforce" } else if contains(.msg, "authentication failure") { "login_failed" } else if contains(.msg, "login failed") { "login_failed" } else if contains(.msg, "invalid user") { "login_failed" } else if contains(.msg, "configuration") { "config_change" } else if contains(.msg, "config file") { "config_change" } else if contains(.msg, "changed") { "config_change" } else if contains(.msg, "attack") { "attack" } else if contains(.msg, "blocked") { "attack" } else if contains(.msg, "injection") { "attack" } else if contains(.msg, "session opened") { "auth_success" } else if contains(.msg, "login success") { "auth_success" } else { "unknown" }
+
+      # ---- 结果字段 ----
+      .outcome = if .severity <= 3 { "fail" } else if .severity <= 5 { "warn" } else { "info" }
+      .user_name = ""
+      .source_ip = if exists(."source_ip") { string!(."source_ip") } else { "0.0.0.0" }
+      .raw = string!(.message)
+
+      # 清理 Vector 内部字段，仅保留 ClickHouse 目标列（severity/facility 为数字字段，必须保留）
+      del(.timestamp)
+      del(.hostname)
+      del(.appname)
+      del(.procid)
+      del(.msgid)
+      del(.version)
+      del(.source_type)
+      del(.msg)
+
+sinks:
+  clickhouse_logs:
+    type: clickhouse
+    inputs: [parse_logs]
+    endpoint: http://clickhouse:8123
+    database: audit
+    table: audit_logs
+    auth:
+      strategy: basic
+      user: default
+      password: ${CLICKHOUSE_PASSWORD}
+    skip_unknown_fields: true
+    batch:
+      max_events: 500
+      timeout_secs: 5
+    healthcheck:
+      enabled: true
+      timeout_secs: 5
+
+  vector_console:
+    type: console
+    inputs: [parse_logs]
+    encoding:
+      codec: json
+    # 调试用，生产可移除（保留低成本排障通道）

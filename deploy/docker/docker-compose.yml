@@ -1,0 +1,112 @@
+# 日志审计平台 - 容器化部署编排（测试机）
+# 服务: nginx(对外入口) / clickhouse(日志存储) / mysql(用户·会话·操作审计) / api(自研 Go 认证 API)
+# 前端构建: 在宿主机执行（apt nodejs + npmmirror），产物挂载进 nginx 容器
+# 用法:
+#   docker compose build api      # 需先完成后端编译（见 deploy-m2.sh）
+#   docker compose up -d
+# 生产注意: 通过 .env 覆盖 MYSQL_PASSWORD / CLICKHOUSE_PASSWORD / JWT_SECRET / ADMIN_INIT_PASSWORD
+
+services:
+  # ---------- Nginx 对外入口（静态 + 反代） ----------
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: audit-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /opt/audit/web/dist:/usr/share/nginx/html:ro
+      - ./nginx/audit.conf:/etc/nginx/conf.d/audit.conf:ro
+      - ./nginx/security-headers.inc:/etc/nginx/conf.d/security-headers.inc:ro
+      - ./certs:/etc/nginx/certs:ro
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  # ---------- ClickHouse 日志流水存储 ----------
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    container_name: audit-clickhouse
+    environment:
+      CLICKHOUSE_DB: audit
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-audit2026}
+    volumes:
+      - ch-data:/var/lib/clickhouse
+      - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "127.0.0.1:8123:8123"   # HTTP 接口，仅本机（等保：不对外暴露数据库）
+      - "127.0.0.1:9000:9000"   # Native 接口
+    ulimits:
+      nofile: 262144
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --password \"$$CLICKHOUSE_PASSWORD\" -q 'SELECT 1'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  # ---------- MySQL 用户/会话/操作审计（M2 认证后端） ----------
+  mysql:
+    image: mysql:8.0
+    container_name: audit-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root2026Audit}
+      MYSQL_DATABASE: audit_meta
+      MYSQL_USER: audit
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-audit2026}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "127.0.0.1:3306:3306"   # 仅本机（等保：不对外暴露数据库）
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  # ---------- 自研 Go API（M2 认证服务；nginx 反代 /api/ → api:8080） ----------
+  api:
+    build: ./api
+    image: logaudit/api
+    container_name: audit-api
+    environment:
+      PORT: "8080"
+      MYSQL_DSN: "audit:${MYSQL_PASSWORD:-audit2026}@tcp(mysql:3306)/audit_meta?parseTime=true&charset=utf8mb4&loc=Local&multiStatements=true"
+      CLICKHOUSE_DSN: "clickhouse://default:${CLICKHOUSE_PASSWORD:-audit2026}@clickhouse:9000/audit?dial_timeout=5s&read_timeout=60s"
+      JWT_SECRET: ${JWT_SECRET:-change-me-please-9f2c4e1a}
+      ADMIN_INIT_PASSWORD: ${ADMIN_INIT_PASSWORD:-}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------- Vector 采集器（M4：syslog 514 实时采集 → ClickHouse） ----------
+  # 镜像: GitHub 直连下载静态二进制 + scratch 本地构建（规避 Docker Hub 大层拉取失败）
+  vector:
+    build: ./vector
+    image: logaudit/vector:0.44.0
+    container_name: audit-vector
+    ports:
+      - "514:514/udp"   # syslog UDP（客户端 UDP 上传入口）
+      - "514:514/tcp"   # syslog TCP
+      - "127.0.0.1:8686:8686"  # Vector 管理 API，仅本机
+    volumes:
+      - ./vector/vector.yaml:/etc/vector/vector.yaml:ro
+      - vector-data:/var/lib/vector
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-audit2026}
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  nginx-logs:
+  ch-data:
+  mysql-data:
+  vector-data:

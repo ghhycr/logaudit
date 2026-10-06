@@ -1,0 +1,58 @@
+<html style="margin:0;padding:0;">
+<div style="background-color:transparent;box-sizing:border-box;font-family:'Roboto','PingFang SC','Segoe UI',Arial,sans-serif;color:#1A1B1C;font-size:13px;">
+  <div style="font-size:16px;font-weight:600;margin-bottom:4px;">M5 自研告警引擎（等价 ElastAlert2）· 验证结果</div>
+  <div style="font-size:12px;color:#6B7280;margin-bottom:14px;">测试机 192.168.143.131 · 全链路 10/10 验证通过 · 2026-10-06</div>
+
+  <div style="display:flex;gap:10px;flex-wrap:wrap;">
+    <!-- 引擎核心 -->
+    <div style="flex:1 1 220px;min-width:0;background:#F4F3EE;border:1px solid #E4E3DD;border-radius:12px;padding:12px;box-sizing:border-box;">
+      <div style="font-size:12px;font-weight:600;color:#9EACEA;margin-bottom:8px;">① 引擎核心（嵌入 audit-api，10s 调度）</div>
+      <div style="font-size:12px;line-height:1.8;">
+        frequency · 窗口计数 ≥ 阈值<br/>
+        spike · 当前 vs 基线窗口倍数<br/>
+        flatline · 窗口内静默<br/>
+        any · 命中即告警<br/>
+        <b>realert</b> 去重（同规则+维度窗口内只告警一次）<br/>
+        分组聚合：host / source_ip / event_type / user_name
+      </div>
+    </div>
+
+    <!-- 验证链路 -->
+    <div style="flex:1 1 260px;min-width:0;background:#F4F3EE;border:1px solid #E4E3DD;border-radius:12px;padding:12px;box-sizing:border-box;">
+      <div style="font-size:12px;font-weight:600;color:#9EACEA;margin-bottom:8px;">② 端到端实测</div>
+      <div style="font-size:12px;line-height:1.8;">
+        规则创建（frequency ssh_bruteforce ≥2，group=host）✔<br/>
+        插入 3 条攻击日志 → 引擎 30s 内触发<br/>
+        告警事件：key=fw-01 · count=3 · open ✔<br/>
+        <b>Webhook 收到完整 JSON</b>（含 3 条命中样本）✔<br/>
+        规则状态：alert_count=1 · last_alert_at 更新 ✔<br/>
+        ack 确认处置 ✔ · 告警统计 open/today/total ✔<br/>
+        <b>realert 去重</b>：同 host 再入数据不重复告警 ✔
+      </div>
+    </div>
+
+    <!-- 接口与前端 -->
+    <div style="flex:1 1 200px;min-width:0;background:#F4F3EE;border:1px solid #E4E3DD;border-radius:12px;padding:12px;box-sizing:border-box;">
+      <div style="font-size:12px;font-weight:600;color:#9EACEA;margin-bottom:8px;">③ 接口与前端</div>
+      <div style="font-size:12px;line-height:1.8;">
+        GET/POST/PUT/DELETE /alerts/rules（admin）<br/>
+        POST /alerts/rules/{id}/test 试运行<br/>
+        GET /alerts/events · POST /{id}/ack<br/>
+        GET /alerts/events/stats<br/>
+        前端新增「告警规则」「告警事件」两页（构建 8.3s）
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
+    <div style="flex:1 1 220px;min-width:0;border:1px solid #E4E3DD;border-radius:12px;padding:10px 12px;box-sizing:border-box;background:linear-gradient(135deg, rgba(158,172,234,0.12), rgba(158,172,234,0.22));">
+      <div style="font-size:12px;font-weight:600;">修复的 bug</div>
+      <div style="font-size:12px;line-height:1.8;margin-top:4px;">MySQL 不支持 <code>INTERVAL ?</code> 参数化 → realert 检查静默失败、去重失效 → 改为数值拼接后复验通过</div>
+    </div>
+    <div style="flex:1 1 220px;min-width:0;border:1px solid #E4E3DD;border-radius:12px;padding:10px 12px;box-sizing:border-box;background:linear-gradient(135deg, rgba(148,212,195,0.12), rgba(148,212,195,0.22));">
+      <div style="font-size:12px;font-weight:600;">M4 采集器（实测在运行）</div>
+      <div style="font-size:12px;line-height:1.8;margin-top:4px;">audit-vector 容器运行中 · 514/udp 监听正常 · ClickHouse 已 1864 行实时入库（syslog 流持续写入）</div>
+    </div>
+  </div>
+</div>
+</html>

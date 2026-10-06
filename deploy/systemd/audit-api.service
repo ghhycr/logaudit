@@ -1,0 +1,52 @@
+# 日志审计平台 - 后端 API 服务（systemd 单元模板）
+# 目标系统: Ubuntu 24.04
+#
+# 用法:
+#   1) 创建运行用户（如无）:  useradd -r -s /usr/sbin/nologin audit
+#   2) 放置后端产物:
+#        Spring Boot:  cp audit-api.jar /opt/audit/backend/
+#        Go 二进制:    cp audit-api /opt/audit/backend/
+#   3) 复制本文件:      cp audit-api.service /etc/systemd/system/
+#   4) 按需修改下方 ExecStart 与 EnvironmentFile
+#   5) 启用:           systemctl daemon-reload && systemctl enable --now audit-api
+
+[Unit]
+Description=Audit Log Platform - API Service
+Documentation=file:///opt/audit/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 以非特权用户运行（最小权限，等保三级）
+User=audit
+Group=audit
+WorkingDirectory=/opt/audit/backend
+
+# 可选：从 .env 加载环境变量（数据库密码、JWT 密钥等，勿写入 service 文件）
+EnvironmentFile=/opt/audit/backend/.env
+
+# ---- Spring Boot（Java jar）用法 ----
+# 需要: apt install openjdk-21-jre-headless（或对应版本）
+ExecStart=/usr/bin/java -jar /opt/audit/backend/audit-api.jar --server.port=8080
+
+# ---- Go 二进制用法（如后端用 Go/Gin）----
+# 注释掉上面的 ExecStart，启用下面一行：
+# ExecStart=/opt/audit/backend/audit-api
+
+# ---- 进程管理 ----
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=120s
+
+# ---- 资源与安全加固（等保三级） ----
+LimitNOFILE=65535
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/audit/backend /var/log/audit
+ProtectKernelTunables=true
+
+[Install]
+WantedBy=multi-user.target

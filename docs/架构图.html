@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>自建 Web 日志留存查看平台 · 架构图</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#F4F3EE; font-family:'Roboto','PingFang SC','Segoe UI','Microsoft YaHei',Arial,sans-serif; padding:24px; }
+  .wrap { max-width:960px; margin:0 auto; }
+  h1 { font-size:20px; color:#1A1B1C; margin-bottom:4px; }
+  .sub { font-size:12.5px; color:#6B7280; margin-bottom:18px; }
+  .legend { display:flex; gap:18px; margin-bottom:14px; font-size:12.5px; color:#1A1B1C; }
+  .legend span { display:inline-flex; align-items:center; gap:6px; }
+  .dot { width:12px; height:12px; border-radius:3px; display:inline-block; }
+  .dot.own { background:#94D4D0; } .dot.oss { background:#94D8C3; }
+  .layer { border:1px solid rgba(0,0,0,0.10); border-radius:14px; padding:12px 14px; margin-bottom:6px; background:#fff; }
+  .layer-title { font-size:12px; font-weight:600; color:#6B7280; margin-bottom:10px; letter-spacing:.5px; }
+  .cards { display:flex; flex-wrap:wrap; gap:10px; }
+  .card { flex:1 1 180px; min-width:0; border-radius:10px; padding:10px 12px; border:1px solid rgba(0,0,0,0.06); }
+  .card.own { background:linear-gradient(135deg,rgba(148,212,208,0.16),rgba(148,212,208,0.34)); }
+  .card.oss { background:linear-gradient(135deg,rgba(148,216,195,0.14),rgba(148,216,195,0.30)); }
+  .card .name { font-size:13.5px; font-weight:600; color:#1A1B1C; }
+  .card .role { font-size:11px; color:#6B7280; margin-top:3px; line-height:1.5; }
+  .card .tag { display:inline-block; font-size:10px; padding:1px 7px; border-radius:20px; margin-top:6px; font-weight:600; }
+  .tag.own { background:rgba(29,120,114,0.12); color:#1D7872; }
+  .tag.oss { background:rgba(56,130,90,0.12); color:#38825A; }
+  .flow { text-align:center; color:#9AA0A6; font-size:12px; line-height:1.2; margin:2px 0; }
+  .note { margin-top:14px; font-size:11.5px; color:#6B7280; line-height:1.7; background:rgba(255,255,255,0.6); border-radius:10px; padding:10px 12px; border:1px dashed rgba(0,0,0,0.10); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>自建 Web 日志留存查看平台 · 系统架构</h1>
+  <div class="sub">五层架构 ｜ 绿色 = 开源组件，青色 = 自研组件（Web 页面全部自行开发）｜ Ubuntu 24.04 单机 Docker Compose</div>
+  <div class="legend"><span><i class="dot oss"></i>开源组件</span><span><i class="dot own"></i>自研组件</span></div>
+
+  <!-- 展示层 -->
+  <div class="layer">
+    <div class="layer-title">展示层 · 自研 Web（AuditWeb）</div>
+    <div class="cards">
+      <div class="card own"><div class="name">登录页</div><div class="role">账号密码 + JWT 会话</div></div>
+      <div class="card own"><div class="name">总览仪表盘</div><div class="role">日志量 / 趋势 / 分类占比 / TOP10</div></div>
+      <div class="card own"><div class="name">日志检索页</div><div class="role">时间+字段+关键词 · 详情 · CSV 导出</div></div>
+      <div class="card own"><div class="name">统计 / 设备 / 留存 / 设置</div><div class="role">登录失败分析 · 台账 · TTL 状态 · 账号</div></div>
+    </div>
+    <div class="tag own" style="margin-top:8px;">Vue3 + Element Plus + ECharts（前端全部自研）</div>
+  </div>
+  <div class="flow">▼ HTTPS（Caddy / Nginx 反向代理，开源）</div>
+
+  <!-- 服务层 -->
+  <div class="layer">
+    <div class="layer-title">服务层 · 自研 API（AuditAPI · Go + Gin）</div>
+    <div class="cards">
+      <div class="card own"><div class="name">认证 JWT</div><div class="role">bcrypt + 双令牌</div></div>
+      <div class="card own"><div class="name">日志检索</div><div class="role">时间/字段/关键词 + 分页</div></div>
+      <div class="card own"><div class="name">统计聚合</div><div class="role">GROUP BY 秒级返回</div></div>
+      <div class="card own"><div class="name">设备/账号/导出</div><div class="role">CRUD + CSV + 操作审计</div></div>
+    </div>
+  </div>
+  <div class="flow">▼ SQL 查询 / 批量写入</div>
+
+  <!-- 存储层 -->
+  <div class="layer">
+    <div class="layer-title">存储层 · 开源</div>
+    <div class="cards">
+      <div class="card oss"><div class="name">ClickHouse</div><div class="role">MergeTree · ZSTD 压缩 · TTL 180 天自动过期 · ngram 全文索引</div><span class="tag oss">开源</span></div>
+      <div class="card oss"><div class="name">SQLite</div><div class="role">用户 / 设备台账 / 操作审计元数据</div><span class="tag oss">开源</span></div>
+      <div class="card oss"><div class="name">系统快照备份</div><div class="role">分区导出 + 快照，180 天留存成本核算</div><span class="tag oss">开源</span></div>
+    </div>
+  </div>
+  <div class="flow">▼ 批量写入（≥5000 条/批）</div>
+
+  <!-- 接入层 -->
+  <div class="layer">
+    <div class="layer-title">接入层 · 自研（LogIngester · Go）</div>
+    <div class="cards">
+      <div class="card own"><div class="name">5140 TCP/UDP</div><div class="role">rsyslog 转发（RFC3164/5424）</div></div>
+      <div class="card own"><div class="name">5044 Beats</div><div class="role">Filebeat / Winlogbeat 协议</div></div>
+      <div class="card own"><div class="name">Grok 解析表</div><div class="role">华为/华三/锐捷/Cisco/sshd/Windows 安全事件</div></div>
+      <div class="card own"><div class="name">磁盘队列缓冲</div><div class="role">失败重试 · Prometheus 指标</div></div>
+    </div>
+  </div>
+  <div class="flow">▲ 采集上报</div>
+
+  <!-- 采集层 -->
+  <div class="layer">
+    <div class="layer-title">采集层 · 开源</div>
+    <div class="cards">
+      <div class="card oss"><div class="name">rsyslog · 514</div><div class="role">网络/安全设备 Syslog（UDP/TCP）</div><span class="tag oss">开源</span></div>
+      <div class="card oss"><div class="name">Filebeat</div><div class="role">Linux 服务器 system/auditd 模块</div><span class="tag oss">开源</span></div>
+      <div class="card oss"><div class="name">Winlogbeat</div><div class="role">Windows 安全日志 4624/4625/4720</div><span class="tag oss">开源</span></div>
+      <div class="card oss"><div class="name">snmptrapd · 162</div><div class="role">SNMP Trap（可选）</div><span class="tag oss">开源</span></div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>关键设计</b>：① 接入层与存储解耦，采集高峰 Ingester 本地缓冲不背压 ClickHouse；② 180 天留存靠 TTL 按分区自动删除，ZSTD 压缩 5~15:1 大幅省磁盘；③ 自研仅 2 个服务（Ingester + API），排障面远小于 ELK 全家桶；④ Web 七个页面全部自行开发，贴合自身审计查看需求。
+  </div>
+</div>
+</body>
+</html>

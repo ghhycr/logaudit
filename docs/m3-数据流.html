@@ -1,0 +1,46 @@
+<html style="margin:0;padding:0;">
+<div style="background-color:transparent;box-sizing:border-box;font-family:'Roboto','PingFang SC','Segoe UI',Arial,sans-serif;color:#1A1B1C;">
+  <div style="font-size:16px;font-weight:600;margin:0 0 4px;">M3 日志检索接口 + ClickHouse 对接 · 验证结果</div>
+  <div style="font-size:12px;color:#6B7280;margin-bottom:14px;">测试机 192.168.143.131 · 2026-10-06 · 全链路 8/8 验证通过</div>
+
+  <div style="display:flex;gap:10px;flex-wrap:wrap;">
+
+    <!-- 采集层 -->
+    <div style="flex:1 1 180px;min-width:0;background:#F4F3EE;border:1px solid #E4E3DD;border-radius:12px;padding:12px;box-sizing:border-box;">
+      <div style="font-size:12px;font-weight:600;color:#9EACEA;margin-bottom:8px;">① 数据入库</div>
+      <div style="font-size:12px;line-height:1.7;">clickhouse-client 插入 <b>8 条</b>测试日志<br/>（今日 5 条 + 昨日 3 条，含 SSH暴力破解/攻击/配置变更等）</div>
+      <div style="font-size:12px;margin-top:8px;color:#6B7280;">→ audit.audit_logs（MergeTree，180 天 TTL）</div>
+    </div>
+
+    <!-- API 层 -->
+    <div style="flex:1 1 300px;min-width:0;background:#F4F3EE;border:1px solid #E4E3DD;border-radius:12px;padding:12px;box-sizing:border-box;">
+      <div style="font-size:12px;font-weight:600;color:#9EACEA;margin-bottom:8px;">② Go API 接口（JWT 鉴权 + 角色权限）</div>
+      <div style="font-size:12px;line-height:1.8;">
+        GET /logs/search — 组合过滤 total=<b>8</b>，host+类型+关键词 total=<b>2</b> ✔<br/>
+        GET /stats/overview — today_total=<b>5</b>，last_7d 2 天，TOP 源 IP ✔<br/>
+        GET /devices — 设备 CRUD（admin 写 / 只读角色读）✔<br/>
+        GET /retention — TTL 180 天 · ZSTD · ngrambf_v1 ✔<br/>
+        GET /users — 用户列表（admin）✔
+      </div>
+    </div>
+
+    <!-- 前端层 -->
+    <div style="flex:1 1 160px;min-width:0;background:#F4F3EE;border:1px solid #E4E3DD;border-radius:12px;padding:12px;box-sizing:border-box;">
+      <div style="font-size:12px;font-weight:600;color:#9EACEA;margin-bottom:8px;">③ 前端对接</div>
+      <div style="font-size:12px;line-height:1.7;">日志检索页 / 统计概览页 / 设备台账页<br/>接口契约已与前端 types/api 对齐，无需改动</div>
+    </div>
+
+  </div>
+
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
+    <div style="flex:1 1 200px;min-width:0;border:1px solid #E4E3DD;border-radius:12px;padding:10px 12px;box-sizing:border-box;background:linear-gradient(135deg, rgba(158,172,234,0.12), rgba(158,172,234,0.22));">
+      <div style="font-size:12px;font-weight:600;">本轮修复的问题</div>
+      <div style="font-size:12px;line-height:1.8;margin-top:4px;">① devices 表缺失 → db.go schema 补齐<br/>② 测试脚本 docker exec 缺 -i → 补 8 条数据成功<br/>③ 登录失败审计写入 → login-fail 统计出数<br/>④ 审计 IP 统一取 X-Forwarded-For 真实来源</div>
+    </div>
+    <div style="flex:1 1 200px;min-width:0;border:1px solid #E4E3DD;border-radius:12px;padding:10px 12px;box-sizing:border-box;background:linear-gradient(135deg, rgba(148,212,195,0.12), rgba(148,212,195,0.22));">
+      <div style="font-size:12px;font-weight:600;">遗留说明</div>
+      <div style="font-size:12px;line-height:1.8;margin-top:4px;">/logs/export 返回 task_id 为占位（M4 实现真实 CSV 导出）；stats/login-fail 依赖登录失败实际发生；当前统计口径为 8 条测试数据</div>
+    </div>
+  </div>
+</div>
+</html>
