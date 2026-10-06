@@ -76,7 +76,7 @@
 
 ```bash
 # 1. 获取项目
-git clone <仓库地址> /opt/audit
+git clone https://gitee.com/ghhycr/logaudit.git /opt/audit
 cd /opt/audit
 
 # 2. 按需修改环境变量（默认已可跑通）
@@ -147,7 +147,7 @@ systemctl restart rsyslog
 
 ## 反馈与贡献
 
-- 提交 [Issue](<仓库 issues 地址>) 反馈问题与建议
+- 提交 [Issue](https://gitee.com/ghhycr/logaudit/issues) 反馈问题与建议
 - 欢迎 Pull Request：前端页面（`web/src/views/`）、后端接口（`backend/`）、部署脚本（`deploy/`）
 - 安全漏洞请通过 [SECURITY.md](SECURITY.md) 渠道上报
 
