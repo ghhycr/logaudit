@@ -11,6 +11,15 @@ dist/
 *.pem
 !certs/.gitkeep
 
+# --- 本地授权文件（严禁入库） ---
+*.lic
+license-data/
+active.lic
+
+# --- Java 构建产物（宿主机 mvn package 产出，不入库） ---
+target/
+*.jar
+
 # --- 部署运行时 ---
 deploy/docker/api/audit-api
 deploy/docker/certs/

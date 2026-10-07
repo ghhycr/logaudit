@@ -93,6 +93,12 @@ const routes: RouteRecordRaw[] = [
         name: 'settings-base',
         component: () => import('@/views/settings/BasicSettingsView.vue'),
         meta: { title: '基础设置', roles: ['admin'] }
+      },
+      {
+        path: 'settings/license',
+        name: 'settings-license',
+        component: () => import('@/views/settings/LicenseManageView.vue'),
+        meta: { title: '授权管理', roles: ['admin'] }
       }
     ]
   },

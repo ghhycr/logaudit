@@ -28,6 +28,7 @@ const menus = computed(() => {
       { path: '/settings/users', title: '用户管理' },
       { path: '/settings/roles', title: '权限管理' },
       { path: '/settings/ntp', title: 'NTP服务器配置' },
+      { path: '/settings/license', title: '授权管理' },
       { path: '/retention', title: '留存与容量' }
     ]
   }

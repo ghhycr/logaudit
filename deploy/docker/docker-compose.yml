@@ -22,6 +22,7 @@ services:
       - nginx-logs:/var/log/nginx
     depends_on:
       - api
+      - license
     restart: unless-stopped
 
   # ---------- ClickHouse 日志流水存储 ----------
@@ -103,8 +104,33 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ---------- 授权管理模块（Java / Spring Boot 3 + JDK 17） ----------
+  # 提供「系统设置 → 授权管理」能力：服务器硬件指纹、授权码 / 授权文件（.lic）校验、
+  # 导入激活与导出留痕；授权码一律由本地离线工具 LicenseTool.exe 签发，本服务不提供在线签发。
+  # 授权码协议与 LicenseTool.exe 完全一致（LGA2.<base64url>.<hex(HMAC-SHA256)>，密钥 LICENSE_SECRET）
+  license:
+    build:
+      context: ../../license-service
+    image: logaudit/license-svc
+    container_name: audit-license
+    environment:
+      SERVER_PORT: "8091"
+      LICENSE_SECRET: ${LICENSE_SECRET:?请在 deploy/docker/.env 中设置 LICENSE_SECRET（与本地授权工具 LicenseTool.exe 的签名密钥一致）}
+      LICENSE_PRODUCT: "LogAudit 日志审计平台"
+      LICENSE_DATA_DIR: "/var/lib/license"
+      JWT_SECRET: ${JWT_SECRET:-change-me-please-9f2c4e1a}
+      SPRING_DATASOURCE_URL: "jdbc:mysql://mysql:3306/audit_meta?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai"
+      SPRING_DATASOURCE_USERNAME: "audit"
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-audit2026}
+    volumes:
+      - /:/hostroot:ro       # 宿主机硬件指纹（machine-id / DMI UUID / 网卡 MAC）
+      - license-data:/var/lib/license
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
   # ---------- Vector 采集器（M4：syslog 514 实时采集 → ClickHouse） ----------
-  # 镜像: GitHub 直连下载静态二进制 + scratch 本地构建（规避 Docker Hub 大层拉取失败）
   vector:
     build: ./vector
     image: logaudit/vector:0.44.0
@@ -128,3 +154,4 @@ volumes:
   mysql-data:
   vector-data:
   redis-data:
+  license-data:
